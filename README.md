@@ -136,17 +136,13 @@ Settings live in the console window and are stored as JSON in Electron's userDat
 
 ---
 
-## Moving this into its own repository
+## Contributing
 
-Lantern currently lives in a `lantern/` subdirectory of another project, because the session that wrote it could not create a repository. It has no dependency on its parent and is meant to stand alone:
+The parts most worth a second pair of eyes, in order:
 
-```sh
-git subtree split --prefix=lantern -b lantern-only
-mkdir ../lantern && cd ../lantern && git init
-git pull ../<parent-repo> lantern-only
-```
-
-Then push to a new empty repository and delete the `lantern/` directory from the parent.
+1. **`src/main/agent/permissions.ts`** — the classifier that decides what runs without asking. If you can find a command that gets auto-approved and should not, that is the most valuable bug report this project can receive. Add the case to `permissions.test.ts`.
+2. **First-launch breakage** — the Electron shell has never been run. Issues from an actual `npm run dev` are welcome and expected.
+3. **Retrieval quality** — `src/main/rag/search.ts` fuses BM25 and cosine with reciprocal rank fusion. The weighting is a starting point, not a measured optimum.
 
 ---
 

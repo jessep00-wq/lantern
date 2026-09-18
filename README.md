@@ -82,11 +82,21 @@ The assistant's memory is your vault. Lantern writes plain Markdown with YAML fr
 
 ```
 YourVault/
-  Inbox/     2026-03-09 Call the vendor back.md    ← quick captures
-  Daily/     2026-03-09.md                          ← timestamped log lines
-  Memory/    Pricing decision.md                    ← things it was told to remember
-  .lantern/  index.json                             ← the search index, safe to delete
+  Inbox/                                  ← quick captures
+  Daily/                                  ← timestamped daily notes
+  memory/
+    knowledge/
+      index.md                            ← compact map loaded at session start
+      ...                                 ← maintained linked subject pages
+    notes/                                ← durable facts, decisions and observations
+    sessions/                             ← raw conversation history
+    staging/
+      knowledge/                          ← reserved for verified background refinement
+  .lantern/
+    index.json                            ← local retrieval cache, safe to delete
 ```
+
+Lantern creates the `memory/` scaffold in the selected local vault and leaves existing files untouched. Personal memory stays in that local vault; it is not written into this source repository. The compact `memory/knowledge/index.md` is injected into each new agent session, while deeper notes and session history are retrieved only when needed.
 
 Open the same folder in Obsidian and everything is there, linkable and editable. If Lantern disappears tomorrow, the memory is still a vault. That constraint is the point, and it is why there is no database.
 

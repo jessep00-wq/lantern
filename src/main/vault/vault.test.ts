@@ -68,6 +68,34 @@ describe("Vault", () => {
     });
   });
 
+
+  it("creates the Brain scaffold without overwriting an existing index", async () => {
+    await vault.ensureBrainScaffold();
+
+    expect(await vault.exists("memory/knowledge/index.md")).toBe(true);
+    expect(await fs.stat(vault.resolve("memory/notes"))).toBeTruthy();
+    expect(await fs.stat(vault.resolve("memory/sessions"))).toBeTruthy();
+    expect(await fs.stat(vault.resolve("memory/staging/knowledge"))).toBeTruthy();
+
+    await vault.writeNote("memory/knowledge/index.md", {}, "# Custom index\n");
+    await vault.ensureBrainScaffold();
+    const index = await vault.readNote("memory/knowledge/index.md");
+    expect(index.body).toContain("Custom index");
+  });
+
+  it("appends raw conversation turns to session history", async () => {
+    const date = new Date(2026, 8, 18, 9, 5);
+    const first = await vault.appendSessionTurn("user", "Remember this", date);
+    expect(first).toBe("memory/sessions/2026-09-18.md");
+
+    await vault.appendSessionTurn("assistant", "I will.", new Date(2026, 8, 18, 9, 6));
+    const session = await vault.readNote(first);
+    expect(session.body).toContain("## 09:05 user");
+    expect(session.body).toContain("Remember this");
+    expect(session.body).toContain("## 09:06 assistant");
+    expect(session.body).toContain("I will.");
+  });
+
   it("writes and reads a note", async () => {
     await vault.writeNote("Projects/Test.md", { title: "Test", tags: ["x"] }, "# Test\n\nBody\n");
     const note = await vault.readNote("Projects/Test.md");

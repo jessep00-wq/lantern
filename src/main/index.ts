@@ -80,6 +80,10 @@ async function wireVault(): Promise<void> {
     dailyFolder: settings.dailyFolder,
   });
 
+  // The Brain structure is created in the user's local vault, never in this
+  // source repository. Existing files are left untouched.
+  await vault.ensureBrainScaffold();
+
   index = new VaultIndex(vault, (status: IndexStatus) => {
     broadcast(EVENT.indexStatus, status);
   });

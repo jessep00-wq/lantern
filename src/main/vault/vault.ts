@@ -75,6 +75,81 @@ export class Vault {
     }
   }
 
+  /**
+   * Create Lantern's Brain-compatible memory tree without overwriting anything
+   * the user already has. The three durable layers mirror the architecture
+   * described by Perplexity: synthesized knowledge, distilled notes, and raw
+   * session history. Staging is reserved for future background refinement.
+   */
+  async ensureBrainScaffold(): Promise<void> {
+    const directories = [
+      "memory/knowledge",
+      "memory/notes",
+      "memory/sessions",
+      "memory/staging/knowledge",
+    ];
+
+    await Promise.all(
+      directories.map((directory) => fs.mkdir(this.resolve(directory), { recursive: true })),
+    );
+
+    const indexPath = "memory/knowledge/index.md";
+    if (await this.exists(indexPath)) return;
+
+    await this.writeNote(
+      indexPath,
+      {
+        title: "Brain Index",
+        created: new Date().toISOString(),
+        source: "lantern",
+        tags: ["brain", "index"],
+      },
+      [
+        "# Brain Index",
+        "",
+        "This is Lantern's compact map of durable knowledge. Keep it concise.",
+        "Use [[wikilinks]] to point to maintained subject pages.",
+        "",
+        "## Active projects",
+        "",
+        "## Work and responsibilities",
+        "",
+        "## People and organizations",
+        "",
+        "## Systems and routines",
+        "",
+        "## Preferences and decisions",
+        "",
+        "## Reference",
+        "",
+      ].join("\n"),
+    );
+  }
+
+  /** Append one raw conversation turn to the session-history layer. */
+  async appendSessionTurn(
+    role: "user" | "assistant",
+    text: string,
+    date = new Date(),
+  ): Promise<string> {
+    const relativePath = `memory/sessions/${dayStamp(date)}.md`;
+    const absolute = this.resolve(relativePath);
+    await fs.mkdir(path.dirname(absolute), { recursive: true });
+
+    let existing = "";
+    try {
+      existing = await fs.readFile(absolute, "utf8");
+    } catch {
+      existing = `# Session ${dayStamp(date)}\n\n`;
+    }
+
+    const clean = text.trim();
+    const block = `## ${timeStamp(date)} ${role}\n\n${clean}\n`;
+    const separator = existing.endsWith("\n\n") ? "" : existing.endsWith("\n") ? "\n" : "\n\n";
+    await fs.writeFile(absolute, `${existing}${separator}${block}\n`, "utf8");
+    return this.relative(absolute);
+  }
+
   /** Every Markdown file in the vault, as vault-relative paths. */
   async listNotePaths(): Promise<string[]> {
     const out: string[] = [];

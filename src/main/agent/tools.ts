@@ -1,5 +1,5 @@
 /**
- * The tools that make this assistant *yours* rather than a generic one.
+ * The tools that make this assistant yours rather than a generic one.
  *
  * The Agent SDK already brings file reading, editing, globbing, grep and bash.
  * What it does not know is that a particular folder on this machine is a second
@@ -32,9 +32,8 @@ export function createVaultToolServer(deps: VaultToolDeps) {
   const searchVault = tool(
     "search_vault",
     "Search the user's personal note vault for passages relevant to a question. " +
-      "Use this before answering anything about the user's own projects, people, " +
-      "decisions, preferences or history — the vault is their long-term memory and " +
-      "will contain things you cannot otherwise know.",
+      "The Brain index is preloaded separately. Use search to move from maintained " +
+      "knowledge into distilled notes or raw sessions when more evidence is needed.",
     {
       query: z.string().describe("What to look for, phrased as the user would say it"),
       limit: z.number().int().min(1).max(20).optional().describe("Max passages, default 6"),
@@ -65,7 +64,7 @@ export function createVaultToolServer(deps: VaultToolDeps) {
     "Read one note from the vault in full, by its vault-relative path. " +
       "Use after search_vault when a passage looks relevant and you need the whole note.",
     {
-      path: z.string().describe('Vault-relative path, e.g. "Projects/MeasureWise.md"'),
+      path: z.string().describe('Vault-relative path, e.g. "memory/knowledge/projects/example.md"'),
     },
     async ({ path }) => {
       try {
@@ -83,18 +82,17 @@ export function createVaultToolServer(deps: VaultToolDeps) {
 
   const rememberFact = tool(
     "remember",
-    "Save something worth keeping permanently to the vault, as a new note or appended " +
-      "to an existing one. Use this when the user tells you a durable fact, preference, " +
-      "decision or piece of context that you should still know in a month. Do not use it " +
-      "for passing chatter.",
+    "Save something worth keeping permanently. New observations should normally go " +
+      "to memory/notes. Use memory/knowledge only for maintained subject pages that " +
+      "synthesize stable information and link to related pages. Do not use this for chatter.",
     {
       title: z.string().describe("Short title for the note"),
       content: z.string().describe("The note body, in Markdown"),
-      folder: z.string().optional().describe('Vault folder, default "Memory"'),
+      folder: z.string().optional().describe('Vault folder, default "memory/notes"'),
       tags: z.array(z.string()).optional().describe("Tags to add to frontmatter"),
     },
     async ({ title, content, folder, tags }) => {
-      const dir = (folder ?? "Memory").replace(/^\/+|\/+$/g, "");
+      const dir = (folder ?? "memory/notes").replace(/^\/+|\/+$/g, "");
       const filename = `${safeFilename(title)}.md`;
       const notePath = dir ? `${dir}/${filename}` : filename;
 
@@ -168,8 +166,7 @@ export function createVaultToolServer(deps: VaultToolDeps) {
     name: "vault",
     version: "0.1.0",
     instructions:
-      "Tools for the user's personal Obsidian vault, which is their long-term memory, " +
-      "and for looking at their screen.",
+      "Tools for the user's layered Brain-style Obsidian vault and for looking at their screen.",
     tools: [searchVault, readNote, rememberFact, logToDaily, readScreen],
   });
 }

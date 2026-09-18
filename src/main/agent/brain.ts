@@ -1,18 +1,13 @@
 /**
  * The brain: one long-lived agent session, driven by the Claude Agent SDK.
  *
- * Two decisions shape this file.
+ * The session is streaming-input rather than one query per utterance. The SDK
+ * accepts an async iterable of user messages, which means the conversation,
+ * loaded context and warmed session survive between things the user says.
  *
- * The session is *streaming-input* rather than one query per utterance. The SDK
- * accepts an async iterable of user messages, which means the conversation, the
- * loaded context and the warmed session all survive between things the user
- * says. Asking "what about the other one?" thirty seconds later works, and
- * interrupting mid-answer is possible at all.
- *
- * Every tool call passes through `canUseTool`. Reads run freely; writes inside
- * the vault run freely; anything that touches the machine or the network stops
- * and waits for the human. That gate is the difference between an assistant
- * with hands and a liability.
+ * Every tool call passes through canUseTool. Reads run freely; writes inside
+ * the vault run freely; anything that touches the machine or network stops and
+ * waits for the human.
  */
 
 import { query, type CanUseTool, type Options, type Query, type SDKUserMessage } from "@anthropic-ai/claude-agent-sdk";
@@ -63,22 +58,33 @@ function deferred<T>(): { promise: Promise<T>; resolve: (value: T) => void } {
   return { promise, resolve };
 }
 
-function systemPrompt(vaultRoot: string): string {
+function systemPrompt(vaultRoot: string, brainIndex: string): string {
   return [
     "You are Lantern, a voice assistant running locally on the user's own computer.",
     "",
     "Your memory is an Obsidian vault of Markdown files at:",
     `  ${vaultRoot}`,
     "",
-    "How to work:",
-    "- Before answering anything about the user's own projects, people, decisions or",
-    "  history, search the vault. You will not know these things otherwise, and",
-    "  guessing about someone's own life reads as carelessness.",
-    "- When the user tells you something durable — a preference, a decision, a fact",
-    "  worth having in a month — save it with the remember tool. Do not ask permission",
-    "  to remember; just do it and mention it in one short clause.",
-    "- Cite notes by title when you use them, so the user can go read the source.",
+    "Lantern memory has three layers:",
+    "- memory/knowledge: maintained subject pages and the compact Brain index.",
+    "- memory/notes: distilled durable facts, decisions, preferences and observations.",
+    "- memory/sessions: raw conversation history used as evidence when deeper verification is needed.",
+    "",
+    "Use memory like an investigator, not like a dump:",
+    "- Start with the Brain index below to orient yourself.",
+    "- For personal questions, read relevant knowledge pages first, then search notes.",
+    "- Open session history only when a claim needs verification, dates matter, or sources conflict.",
+    "- Follow [[wikilinks]] between related knowledge pages when they help answer the question.",
+    "- Prefer current maintained knowledge over an older isolated note, but verify consequential claims.",
+    "- Never guess about the user's projects, people, decisions, preferences or history.",
+    "- When the user tells you a durable new fact, save it with the remember tool.",
+    "- New durable facts normally land in memory/notes. Update memory/knowledge only when a stable",
+    "  subject page should be revised or linked.",
+    "- Cite notes by title when you rely on them, so the user can inspect the source.",
     "- When something belongs to today specifically, log it to the daily note.",
+    "",
+    "Compact Brain index loaded at session start:",
+    brainIndex || "(Brain index is empty.)",
     "",
     "How to speak:",
     "- Your replies are read aloud. Write for the ear: short sentences, no bullet",
@@ -122,6 +128,8 @@ export class Brain {
       at: new Date().toISOString(),
     });
 
+    await this.deps.vault.appendSessionTurn("user", trimmed);
+
     const message: SDKUserMessage = {
       type: "user",
       session_id: "",
@@ -133,7 +141,7 @@ export class Brain {
     if (waiter) waiter.resolve(message);
     else this.queue.push(message);
 
-    if (!this.session) this.start();
+    if (!this.session) await this.start();
   }
 
   /** Stop the current turn without ending the session. */
@@ -154,7 +162,7 @@ export class Brain {
     resolve(decision);
   }
 
-  /** End the session. The next `ask` starts a fresh one. */
+  /** End the session. The next ask starts a fresh one. */
   async stop(): Promise<void> {
     const session = this.session;
     this.session = null;
@@ -179,7 +187,16 @@ export class Brain {
     }
   }
 
-  private buildOptions(): Options {
+  private async loadBrainIndex(): Promise<string> {
+    try {
+      const note = await this.deps.vault.readNote("memory/knowledge/index.md");
+      return note.body.trim();
+    } catch {
+      return "";
+    }
+  }
+
+  private buildOptions(brainIndex: string): Options {
     const config = this.deps.getConfig();
     return {
       model: config.model,
@@ -187,7 +204,7 @@ export class Brain {
       systemPrompt: {
         type: "preset",
         preset: "claude_code",
-        append: systemPrompt(this.deps.vault.root),
+        append: systemPrompt(this.deps.vault.root, brainIndex),
       },
       mcpServers: {
         vault: createVaultToolServer({
@@ -309,8 +326,9 @@ export class Brain {
     return { behavior: "allow", updatedInput: args.input };
   }
 
-  private start(): void {
-    const session = query({ prompt: this.messages(), options: this.buildOptions() });
+  private async start(): Promise<void> {
+    const brainIndex = await this.loadBrainIndex();
+    const session = query({ prompt: this.messages(), options: this.buildOptions(brainIndex) });
     this.session = session;
     void this.consume(session);
   }
@@ -323,13 +341,15 @@ export class Brain {
     const closeTurn = () => {
       if (!turnOpen) return;
       this.deps.events.onAssistantDelta("", true);
-      if (buffer.trim()) {
+      const finished = buffer.trim();
+      if (finished) {
         this.deps.events.onTranscript({
           id: `a-${Date.now()}`,
           role: "assistant",
-          text: buffer.trim(),
+          text: finished,
           at: new Date().toISOString(),
         });
+        void this.deps.vault.appendSessionTurn("assistant", finished);
       }
       buffer = "";
       turnOpen = false;
@@ -426,7 +446,7 @@ function describeTool(name: string | undefined, input: Record<string, unknown>):
   }
 }
 
-/** `git status --short` becomes `git status`, for a session allowlist entry. */
+/** git status --short becomes git status for a session allowlist entry. */
 function firstTwoTokens(command: string): string {
   return command.trim().split(/\s+/).slice(0, 2).join(" ");
 }
